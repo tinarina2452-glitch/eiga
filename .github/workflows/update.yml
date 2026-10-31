@@ -18,6 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45      # 超過 45 分鐘就放棄，網站保留上一份資料
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -31,7 +32,7 @@ jobs:
       - name: 抓取場次、產生網頁
         run: |
           mkdir -p site
-          python taipei_movies.py --no-open --strict --out site/index.html
+          python taipei_movies.py --no-open --strict --gentle --out site/index.html
           cp icon.png site/icon.png
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
