@@ -142,12 +142,30 @@ def _ssl_ctx():
 SSL_CTX = _ssl_ctx()
 
 
+import threading
+_GATE = threading.Lock()
+_LAST = [0.0]
+GAP = 0.0          # 每次連線之間至少間隔幾秒（--gentle 時調高）
+BACKOFF = 3        # 失敗後等待的基本秒數（--gentle 時調高）
+
+
+def _wait_turn():
+    if GAP <= 0:
+        return
+    with _GATE:
+        wait = _LAST[0] + GAP - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _LAST[0] = time.monotonic()
+
+
 def fetch(url, tries=4):
     last = None
     for i in range(tries):
         try:
+            _wait_turn()
             req = Request(url, headers={"User-Agent": UA, "Accept-Language": "zh-TW,zh;q=0.9"})
-            with urlopen(req, timeout=20, context=SSL_CTX) as r:
+            with urlopen(req, timeout=15, context=SSL_CTX) as r:
                 raw = r.read()
                 cs = r.headers.get_content_charset()
             for enc in filter(None, [cs, "utf-8", "big5"]):
@@ -163,8 +181,10 @@ def fetch(url, tries=4):
                 "或執行：pip3 install certifi\n") from e
         except Exception as e:  # 網路暫時錯誤就重試
             last = e
-            time.sleep(3 * (i + 1))
-    raise RuntimeError(f"{url}：{last}")
+            if GAP:
+                print(f"\n   … {url.split('/showtime/')[-1]} 第 {i + 1} 次失敗：{e}", flush=True)
+            time.sleep(BACKOFF * (i + 1))
+    raise RuntimeError(f"{last}")
 
 
 # ── 解析 ─────────────────────────────────────────────────────────────
@@ -330,7 +350,13 @@ def main():
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--strict", action="store_true", help="資料不完整時不輸出（GitHub 自動更新用）")
+    ap.add_argument("--gentle", action="store_true", help="慢慢抓，一次一頁（GitHub 自動更新用）")
     args = ap.parse_args()
+
+    global WORKERS, GAP, BACKOFF
+    if args.gentle:
+        WORKERS, GAP, BACKOFF = 1, 1.5, 20
+    started = time.monotonic()
 
     print("① 取得台北地區戲院清單…")
     theaters = discover_theaters()
@@ -369,7 +395,11 @@ def main():
             for fut in as_completed(futs):
                 t, ymd = futs[fut]
                 done += 1
-                print(f"\r   {label} {done}/{len(jobs)}", end="", flush=True)
+                if args.gentle:
+                    if done % 20 == 0 or done == len(jobs):
+                        print(f"   {label} {done}/{len(jobs)}（{(time.monotonic() - started) / 60:.0f} 分鐘）", flush=True)
+                else:
+                    print(f"\r   {label} {done}/{len(jobs)}", end="", flush=True)
                 try:
                     results.append((t, ymd, fut.result()))
                 except Exception:
