@@ -31,7 +31,7 @@ jobs:
       - name: 抓取場次、產生網頁
         run: |
           mkdir -p site
-          python taipei_movies.py --no-open --out site/index.html
+          python taipei_movies.py --no-open --strict --out site/index.html
           cp icon.png site/icon.png
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
