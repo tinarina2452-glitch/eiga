@@ -159,7 +159,7 @@ def _wait_turn():
         _LAST[0] = time.monotonic()
 
 
-def fetch(url, tries=4):
+def fetch(url, tries=2):
     last = None
     for i in range(tries):
         try:
@@ -349,13 +349,13 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "movies.html"))
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--debug", action="store_true")
-    ap.add_argument("--strict", action="store_true", help="資料不完整時不輸出（GitHub 自動更新用）")
+    ap.add_argument("--strict", action="store_true", help="（舊選項，保留相容）")
     ap.add_argument("--gentle", action="store_true", help="慢慢抓，一次一頁（GitHub 自動更新用）")
     args = ap.parse_args()
 
     global WORKERS, GAP, BACKOFF
     if args.gentle:
-        WORKERS, GAP, BACKOFF = 1, 1.5, 20
+        WORKERS, GAP, BACKOFF = 1, 1.5, 5
     started = time.monotonic()
 
     print("① 取得台北地區戲院清單…")
@@ -369,6 +369,8 @@ def main():
     def job(t, ymd):
         # 注意：今天的場次只出現在「不帶日期」的網址；帶今天日期的網址是空的
         url = f"{BASE}/showtime/{t['id']}/a02/" + (f"{ymd}/" if ymd else "")
+        if streak[0] >= 8:
+            raise RuntimeError("連續失敗太多次，跳過")
         html = fetch(url)
         if args.debug:
             os.makedirs("debug_html", exist_ok=True)
@@ -386,6 +388,8 @@ def main():
         shows.extend([d.isoformat(), t["id"], fid, hhmm, ver] for fid, hhmm, ver in s)
 
     total = [0]
+    streak = [0]          # 連續失敗次數；太多就代表被擋了，剩下的直接跳過
+    misses = []           # [影院 id, 日期, 是否為「今天」那頁]
 
     def run(jobs, label):
         total[0] += len(jobs)
@@ -402,19 +406,13 @@ def main():
                     print(f"\r   {label} {done}/{len(jobs)}", end="", flush=True)
                 try:
                     results.append((t, ymd, fut.result()))
-                except Exception:
-                    bad.append((t, ymd))
-        print()
-        # 失敗的頁面：休息一下，再一頁一頁慢慢重抓
-        if bad:
-            print(f"   {len(bad)} 頁沒抓到，稍等後重試…")
-            time.sleep(15)
-            for t, ymd in bad:
-                try:
-                    results.append((t, ymd, job(t, ymd)))
+                    streak[0] = 0
                 except Exception as e:
+                    streak[0] += 1
                     failed.append(f"{t['name']} {ymd or '今天'}：{e}")
-                time.sleep(1)
+                    d = dt.datetime.strptime(ymd, "%Y%m%d").date() if ymd else today
+                    misses.append([t["id"], d.isoformat(), ymd is None])
+        print()
         return results
 
     seen = set()   # (tid, ymd) 已排入
@@ -453,19 +451,6 @@ def main():
     if not shows:
         raise SystemExit("沒有抓到任何場次，可能是網站改版了。請用 --debug 執行並把 debug_html 資料夾裡的檔案給 Claude 看。")
 
-    # 給 GitHub 自動更新用：資料明顯不完整時就停下來，不要蓋掉網站上上一份完整的資料
-    if args.strict:
-        bad_ratio = len(failed) / max(total[0], 1)
-        problems = []
-        if bad_ratio > 0.1:
-            problems.append(f"{len(failed)}/{total[0]} 頁抓取失敗")
-        if len(dates) < 2:
-            problems.append(f"只抓到 {len(dates)} 天的場次")
-        if problems:
-            for x in failed:
-                print("   -", x)
-            raise SystemExit("⚠ 資料不完整（" + "、".join(problems) + "），這次不更新網站，保留上一份資料。")
-
     data = {
         "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dates": [d.isoformat() for d in dates],
@@ -473,6 +458,7 @@ def main():
         "lines": [{"id": i, "name": n, "color": c} for i, n, c in LINES],
         "films": films,
         "shows": shows,
+        "misses": misses,
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     with open(args.out, "w", encoding="utf-8") as f:
@@ -483,7 +469,7 @@ def main():
         print(f"   （{len(empty)} 頁沒有場次，多半是戲院當天未排片或資料尚未公布）")
     if failed:
         print(f"   ⚠ {len(failed)} 頁抓取失敗：")
-        for x in failed[:8]:
+        for x in failed[:20]:
             print("     -", x)
     if not args.no_open:
         webbrowser.open(Path(args.out).resolve().as_uri())   # Mac / Windows 都適用
@@ -578,6 +564,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .slot.isfav{border-color:var(--accent)}
 .ver{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:4px;
   color:var(--mute);font-weight:400;white-space:nowrap}
+.miss{background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:10px 0 4px;font-size:13px;line-height:1.5}
+.miss b{color:var(--accent)}
 .empty{text-align:center;color:var(--mute);padding:48px 0}
 
 /* 選擇影院 */
@@ -686,6 +674,13 @@ const S = { date: DATES[0], mode: store.get("mode", "film"), q: "", open: null, 
 const VISIBLE = () => ALL.filter(id => !hidden.has(id));
 const saveLists = () => store.set("lists", lists);
 
+const MISSES = (D.misses || []).filter(m => T[m[0]]);
+// 這一天、目前選的影院裡，有哪幾間這次沒抓到
+function missNote(){
+  const ids = [...new Set(MISSES.filter(([tid, d, isToday]) => inSel(tid) && (d === S.date || (isToday && S.date >= d))).map(m => m[0]))];
+  if (!ids.length) return "";
+  return `<div class="miss"><b>⚠ 這次沒抓到：</b>${ids.map(id => esc(T[id].name)).join("、")}<br>這${ids.length > 1 ? "幾" : ""}間的場次可能缺漏，下次更新會再抓一次。</div>`;
+}
 const isFav = tid => favs.has(tid);
 const inSel = tid => sel.has(tid);
 const isPast = s => s.date === todayStr && s.min < nowMin;
@@ -748,7 +743,7 @@ function renderFilmList(){
     .map(([fid, ss]) => ({fid, ss, th: new Set(ss.map(s => s.tid)), up: ss.filter(s => !isPast(s)).length}))
     .sort((a,b) => (b.up>0)-(a.up>0) || b.th.size - a.th.size || b.ss.length - a.ss.length);
 
-  let h = `<div class="hint">${films.length} 部電影 · ${sel.size} 間影院 · 點片名展開場次</div>`;
+  let h = missNote() + `<div class="hint">${films.length} 部電影 · ${sel.size} 間影院 · 點片名展開場次</div>`;
   if (!films.length) h += `<div class="empty">${emptyMsg()}</div>`;
   for (const f of films){
     const info = D.films[f.fid], open = S.open === f.fid;
@@ -781,7 +776,7 @@ function renderTime(){
   let h = `<div class="ctl">從 <input type="time" id="from" value="${fmt(S.from)}" step="300">
     <select id="span">${spans.map(([v,l]) => `<option value="${v}" ${v===S.span?"selected":""}>${l}</option>`).join("")}</select>
     ${S.date===todayStr?`<button class="chip" id="now">現在</button>`:""}</div>
-    <div class="hint">${list.length} 場 · ${sel.size} 間影院 · 點片名看這部片的所有場次</div>`;
+    ${missNote()}<div class="hint">${list.length} 場 · ${sel.size} 間影院 · 點片名看這部片的所有場次</div>`;
   if (!list.length) h += `<div class="empty">${sel.size ? "這段時間沒有場次，試試拉長時間或「全部影院」" : emptyMsg()}</div>`;
   let lastH = null;
   for (const s of list){
