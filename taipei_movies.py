@@ -142,7 +142,7 @@ def _ssl_ctx():
 SSL_CTX = _ssl_ctx()
 
 
-def fetch(url, tries=3):
+def fetch(url, tries=4):
     last = None
     for i in range(tries):
         try:
@@ -163,7 +163,7 @@ def fetch(url, tries=3):
                 "或執行：pip3 install certifi\n") from e
         except Exception as e:  # 網路暫時錯誤就重試
             last = e
-            time.sleep(1.5 * (i + 1))
+            time.sleep(3 * (i + 1))
     raise RuntimeError(f"{url}：{last}")
 
 
@@ -329,6 +329,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "movies.html"))
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--strict", action="store_true", help="資料不完整時不輸出（GitHub 自動更新用）")
     args = ap.parse_args()
 
     print("① 取得台北地區戲院清單…")
@@ -358,8 +359,11 @@ def main():
             empty.append(f"{t['name']} {d:%m/%d}")
         shows.extend([d.isoformat(), t["id"], fid, hhmm, ver] for fid, hhmm, ver in s)
 
+    total = [0]
+
     def run(jobs, label):
-        done, results = 0, []
+        total[0] += len(jobs)
+        done, results, bad = 0, [], []
         with ThreadPoolExecutor(max_workers=WORKERS) as ex:
             futs = {ex.submit(job, t, ymd): (t, ymd) for t, ymd in jobs}
             for fut in as_completed(futs):
@@ -368,9 +372,19 @@ def main():
                 print(f"\r   {label} {done}/{len(jobs)}", end="", flush=True)
                 try:
                     results.append((t, ymd, fut.result()))
+                except Exception:
+                    bad.append((t, ymd))
+        print()
+        # 失敗的頁面：休息一下，再一頁一頁慢慢重抓
+        if bad:
+            print(f"   {len(bad)} 頁沒抓到，稍等後重試…")
+            time.sleep(15)
+            for t, ymd in bad:
+                try:
+                    results.append((t, ymd, job(t, ymd)))
                 except Exception as e:
                     failed.append(f"{t['name']} {ymd or '今天'}：{e}")
-        print()
+                time.sleep(1)
         return results
 
     seen = set()   # (tid, ymd) 已排入
@@ -408,6 +422,19 @@ def main():
 
     if not shows:
         raise SystemExit("沒有抓到任何場次，可能是網站改版了。請用 --debug 執行並把 debug_html 資料夾裡的檔案給 Claude 看。")
+
+    # 給 GitHub 自動更新用：資料明顯不完整時就停下來，不要蓋掉網站上上一份完整的資料
+    if args.strict:
+        bad_ratio = len(failed) / max(total[0], 1)
+        problems = []
+        if bad_ratio > 0.1:
+            problems.append(f"{len(failed)}/{total[0]} 頁抓取失敗")
+        if len(dates) < 2:
+            problems.append(f"只抓到 {len(dates)} 天的場次")
+        if problems:
+            for x in failed:
+                print("   -", x)
+            raise SystemExit("⚠ 資料不完整（" + "、".join(problems) + "），這次不更新網站，保留上一份資料。")
 
     data = {
         "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
