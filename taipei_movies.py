@@ -3,7 +3,7 @@
 """
 台北電影時刻查詢
 ================
-抓取台北地區（含新北）所有影城已公布的全部場次，產生一個乾淨的查詢頁面 movies.html。
+台北電影之森：抓取台北地區（含新北）所有影城已公布的全部場次，產生一個乾淨的查詢頁面 movies.html。
 
 用法：
     python3 taipei_movies.py            # 抓資料、產生 movies.html 並自動開啟
@@ -30,7 +30,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 # ── 設定 ─────────────────────────────────────────────────────────────
-# 常去的戲院（頁面上可以再用 ☆ 增減，這裡是預設值）
+# （舊設定，「常去」功能已拿掉，保留不影響）
 FAVORITES = {
     "t02b16",  # 光點華山電影館
     "t02c01",  # 百老匯影城公館店
@@ -344,7 +344,7 @@ def main():
     except Exception:
         pass
 
-    ap = argparse.ArgumentParser(description="台北電影時刻查詢")
+    ap = argparse.ArgumentParser(description="台北電影之森")
     ap.add_argument("--days", type=int, default=DAYS)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "movies.html"))
     ap.add_argument("--no-open", action="store_true")
@@ -481,22 +481,22 @@ PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>台北電影時刻</title>
+<title>台北電影之森</title>
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
 <meta name="apple-mobile-web-app-title" content="ʕʘ‿ʘʔ🍿">
 <meta name="application-name" content="ʕʘ‿ʘʔ🍿">
-<meta name="theme-color" content="#f7f5f1">
+<meta name="theme-color" content="#fff1e6">
 <style>
 :root{
-  --bg:#f7f5f1; --panel:#fff; --ink:#1d1b19; --mute:#7a746c; --faint:#b9b2a8;
-  --line:#e6e1d9; --accent:#a3261f; --accent-ink:#fff; --accent-soft:#f6e6e3;
-  --star:#d08b00; --chip:#efebe4; --shade:rgba(20,16,12,.38);
+  --bg:#fff1e6; --panel:#fffaf5; --ink:#4b3027; --mute:#9b7563; --faint:#d6b6a4;
+  --line:#f3d9c8; --accent:#d6372b; --accent-ink:#fff; --accent-soft:#ffe0d6;
+  --star:#e9a23b; --chip:#fbdccb; --shade:rgba(75,48,39,.4);
 }
 @media (prefers-color-scheme:dark){:root{
-  --bg:#151413; --panel:#1e1c1b; --ink:#ece8e2; --mute:#9d968d; --faint:#5e5953;
-  --line:#2f2c29; --accent:#e0564b; --accent-ink:#1a0d0b; --accent-soft:#3a1f1c;
-  --star:#f0b43c; --chip:#2a2725; --shade:rgba(0,0,0,.6);
+  --bg:#231915; --panel:#2e211c; --ink:#f7e7dc; --mute:#c09d8a; --faint:#6f5548;
+  --line:#3f2e27; --accent:#ff6f5e; --accent-ink:#2a120e; --accent-soft:#4b2620;
+  --star:#f0b43c; --chip:#3b2a23; --shade:rgba(0,0,0,.6);
 }}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -508,13 +508,14 @@ button,input,select{font:inherit;color:inherit}
 header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:14px 0 10px}
 header .wrap{padding-bottom:0}
 .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-h1{font-size:18px;margin:0;letter-spacing:.04em}
+h1{font-size:19px;margin:0;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+.logo{width:30px;height:30px;border-radius:8px}
 .stamp{font-size:12px;color:var(--mute)}
 .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .seg{display:inline-flex;background:var(--chip);border-radius:9px;padding:3px;max-width:100%;overflow-x:auto;scrollbar-width:none}
 .seg::-webkit-scrollbar{display:none}
 .seg button{border:0;background:none;padding:5px 12px;border-radius:7px;cursor:pointer;white-space:nowrap}
-.seg button.on{background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+.seg button.on{background:var(--panel);box-shadow:0 1px 2px rgba(75,48,39,.15);font-weight:600;color:var(--accent)}
 .chip{border:1px solid var(--line);background:var(--panel);padding:3px 11px;border-radius:99px;
   cursor:pointer;font-size:13.5px;white-space:nowrap}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -620,7 +621,7 @@ input:focus,select:focus{border-color:var(--accent)}
 </head>
 <body>
 <header><div class="wrap">
-  <div class="top"><h1>台北電影時刻</h1><span class="stamp" id="stamp"></span></div>
+  <div class="top"><h1><img class="logo" src="icon.png" alt="" onerror="this.remove()">台北電影之森</h1><span class="stamp" id="stamp"></span></div>
   <div class="row"><div class="seg" id="dates"></div></div>
   <div class="row">
     <div class="seg" id="modes">
@@ -636,7 +637,6 @@ input:focus,select:focus{border-color:var(--accent)}
   <div class="card" role="dialog" aria-label="選擇影院">
     <div class="card-hd"><b>選擇影院</b><span class="n" id="selN"></span><button class="done" data-close="1">完成</button></div>
     <div class="presets">
-      <button class="chip" data-preset="fav">★ 只選常去</button>
       <button class="chip" data-preset="all">全選</button>
       <button class="chip" data-preset="none">全部取消</button>
     </div>
@@ -665,8 +665,8 @@ const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0"
 const nowMin = now.getHours()*60 + now.getMinutes() + (now.getHours() < 5 ? 1440 : 0);
 const DATES = D.dates.filter(d => d >= todayStr).length ? D.dates.filter(d => d >= todayStr) : D.dates;
 
-let favs = new Set(store.get("favs", D.theaters.filter(t => t.fav).map(t => t.id)).filter(id => T[id]));
-let sel = new Set(store.get("sel", [...favs]).filter(id => T[id]));
+const favs = new Set();   // 「常去」功能已拿掉，改用自訂清單
+let sel = new Set(store.get("sel", ALL).filter(id => T[id]));
 let hidden = new Set(store.get("hidden", []).filter(id => T[id]));     // 暫時收起的影院
 let lists = store.get("lists", []).map(l => ({...l, ids: l.ids.filter(id => T[id])}));  // 自訂清單
 const S = { date: DATES[0], mode: store.get("mode", "film"), q: "", open: null, from: null, span: store.get("span", 3),
@@ -691,7 +691,7 @@ const thRank = (a, b) => (isFav(b) - isFav(a)) || (LORD[mainLine(a)] - LORD[main
 const dots = tid => T[tid].lines.map(l => `<i class="dot" style="--c:${LINE[l]?.color || "#888"}" title="${esc(LINE[l]?.name)}"></i>`).join("");
 const staTag = tid => `<span class="sta">${dots(tid)}${esc(T[tid].station || "—")}</span>`;
 const verTag = v => v ? `<span class="ver">${esc(v)}</span>` : "";
-const starBtn = tid => `<button class="star ${isFav(tid)?"on":""}" data-star="${tid}" title="${isFav(tid)?"取消常去":"設為常去"}">${isFav(tid)?"★":"☆"}</button>`;
+const starBtn = tid => "";
 const sameSet = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
 const saveSel = () => store.set("sel", [...sel]);
 
@@ -707,11 +707,10 @@ function renderHeader(){
   $("#stamp").textContent = "資料更新：" + D.generated.slice(5).replace("-", "/");
   $("#dates").innerHTML = DATES.map(d => `<button data-d="${d}" class="${d===S.date?"on":""}">${dateLabel(d)}</button>`).join("");
   document.querySelectorAll("#modes button").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
-  const isF = favs.size && sameSet(sel, favs), isA = sameSet(sel, new Set(VISIBLE()));
+  const isF = false, isA = sameSet(sel, new Set(VISIBLE()));
   const onList = lists.findIndex(l => sameSet(sel, new Set(l.ids)));
   const custom = !isF && !isA && onList < 0;
   $("#scope").innerHTML =
-    `<button class="chip ${isF?"on":""}" data-preset="fav">★ 常去</button>` +
     `<button class="chip ${isA&&!isF?"on":""}" data-preset="all">全部影院</button>` +
     lists.map((l, i) => `<button class="chip ${i===onList&&!isF&&!isA?"on":""}" data-apply="${i}">${esc(l.name)}</button>`).join("") +
     `<button class="chip ${custom?"on":""}" data-sheet="1">選擇影院${custom?`（${sel.size}）`:""} ▾</button>`;
